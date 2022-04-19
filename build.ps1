@@ -19,6 +19,7 @@ clang ../src/boot.asm   `
 
 ld.lld boot.o         `
        kernel.o       `
+       -T ../linker.ld   `
        -o kernel.elf
 
 llvm-objcopy --output-target binary kernel.elf kernel7.img

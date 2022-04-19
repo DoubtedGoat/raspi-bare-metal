@@ -7,84 +7,100 @@ This repo will be tagged and "released" regularly as I work on it, with the time
 I will try to update the README with a description of what I've done and why upon each release.
 
 
-# Version 0 - Project Inception and Blinky Lights
+# Version 0.0.1 - Linker Questions: Answered
+In version 0.0.0, we stole someone elses code but forgot to use the linker script they provided. The code still ran correctly, raising the question of .. . why.
 
-## Goals
-The initial goal for the project was to run a bare-metal program on some kind of single board computer or microcontroller. The primary skills I was hoping to exercise were finding and reading documentation, toolchain configuration, and terminology. It's been 8 years since I've done any kind of work on embedded systems or microcontrollers, so we're starting just by shaking the dust off (and catching up on what I might have missed).
+The linker script in question comes from this gist by William Durand:
+https://gist.github.com/willdurand/614ad3ad1cac0189691f67c0ac71b9e6
 
-Deliverable #1 is the simplest of all projects: Blink an LED.
+Most of what it seems to do is to start the code section at 0x8000 (I'm not particularly familiar with linker scripts, which might have to change).
 
-## Design decisions
-### Why Raspbery Pi 2?
-It's what I could find in my basement.
+## Starting The Investigation
+To start with, I built two versions of the image - one using the linker script, and one without, to compare how they work.
 
-### Why LLVM+Clang?
-Mostly because it's cool. LLVM+Clang also installs very easily on Windows, and supports cross-compilation as a first-class feature (sort of), making it feel like a strong choice. Being able to run entirely using LLVM tooling would prevent me from having to install GCC toolchains on Windows.
+Hex-dumping the two images with `xxd` shows some differences. They both start with the same line (the entrypoint any anything possibly added for stack unwinding?), and contain the same section of interesting data (presumably our code). The first major difference is that the non-script version has a ton of `0000`'s (no-ops) between the entrypoint and the actual code (the first word of code is at `0x00010010`). The script version does not have this long set of no-ops. 
 
-### Why Windows?
-Mostly "why not". I've been an obstinate Linux user for my entire career (including my time at an all-Windows C#+ASP.NET shop), and I'm extremely comfortable working in Linux (and WSL). My time doing Windows Stuff showed me that Windows tooling is Largely OK and I just haven't taken the time to get as familiar with it as I have with Linux. Since my home computer runs Windows, and working with WSL can be a bit of a headache, it seems like now is the time to learn some new tools.
+The second major difference is that the linker script version has many lines of `d4d4` after the code section, with seemingly no purpose.
 
-### Why no build system (CMake)?
-I'm going to start out building with just a Powershell script because it puts me directly in touch with the Clang and LLD interfaces, which is helpful for learning what types of things I need them to do. CMake is also another layer of difficulty and complexity that I feel is best reserved for another time.
+Somewhat unexpectedly, both files have their entrypoint at `0x00000000`, even though the linker script specifies a starting address of `0x8000`.
 
-This project may grow Makefiles or CMake scripts in the future, but to start with it's not complex enough for the gain to be worth the pain.
+## Entrypoint location
+The first thing I looked into was the entrypoint location, which I had expected to be at `0x8000` for the linker-script version of the image. Looking into the RPi boot process further, I learned that the bootloader puts our kernel file at `0x8000` and then jumps to it - so `0x8000` starting point is not expected to be built into the image file itself. This suggests that the purpose of this offset in the linker script isn't to _place_ the code at a specific location.
 
-## The Process
-### Hardware Checkout
-The first step here was verifying that the Raspberry Pi _still worked_. It was salvaged from my partners interactive-design project from college and had been living in our basement for several years. I would hate to spend hours puzzling over why my lights don't blink when the real problem is the Pi itself.
+More likely, the offset is so that the _program itself_ knows where it is located in memory, in the absence of an OS and configured MMU. If the program is linked with an incorrect idea of where it is located in memory, any instructions that use absolute addresses will be pointed badly. I'd like to _test_ that this is the case, but I don't have a great plan for it currently.
 
-To do this, I followed the Officially Sanctioned Raspberry Pi guide to boot Raspbian. If the Pi could successfully boot Linux (and send debug output over the UART, a hardware feature I knew I wanted to use) it was probably in good enough shape to do anything I'd ask it to do.
+To confirm that the linker instruction is working correctly and I'm not barking up the wrong tree, I used `readelf` to dump the sections of each of the `kernel.elf` files generated during my builds. The section tables look like this:
 
-This step resulted in having to dig up a micro-USB power supply capable of powering the Pi without Raspbian issuing low-voltage warnings, or failing when a USB device was plugged in.
+With Script
+```
+Section Headers:
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            00000000 000000 000000 00      0   0  0
+  [ 1] .ARM.exidx        ARM_EXIDX       00008000 008000 000010 00  AL  2   0  4
+  [ 2] .text             PROGBITS        00008010 008010 0000d4 00  AX  0   0  4
+  [ 3] .rodata           PROGBITS        000080e4 0080e4 000f1c 00  AX  0   0  1
+  [ 4] .ARM.attributes   ARM_ATTRIBUTES  00000000 009000 00002b 00      0   0  1
+  [ 5] .symtab           SYMTAB          00000000 00902c 000080 10      7   5  4
+  [ 6] .shstrtab         STRTAB          00000000 0090ac 000044 00      0   0  1
+  [ 7] .strtab           STRTAB          00000000 0090f0 000037 00      0   0  1
+```
 
-I also had to modify the `config.txt` file on the boot SD to include `uart_2ndstage=1` to get debug output on the UART, to prove it was working. This particular bit of configuration was discovered through a blog post - it's still unclear where in the RPi documentation I would be able to find it.
+Without Script
+```
+Section Headers:
+  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al
+  [ 0]                   NULL            00000000 000000 000000 00      0   0  0
+  [ 1] .ARM.exidx        ARM_EXIDX       000100d4 0000d4 000010 00  AL  2   0  4
+  [ 2] .text             PROGBITS        000200e4 0000e4 0000d4 00  AX  0   0  4
+  [ 3] .ARM.attributes   ARM_ATTRIBUTES  00000000 0001b8 00002b 00      0   0  1
+  [ 4] .comment          PROGBITS        00000000 0001e3 000029 01  MS  0   0  1
+  [ 5] .symtab           SYMTAB          00000000 00020c 000080 10      7   5  4
+  [ 6] .shstrtab         STRTAB          00000000 00028c 000045 00      0   0  1
+  [ 7] .strtab           STRTAB          00000000 0002d1 000037 00      0   0  1
+```
 
-### Blinky Lights
-With the hardware proven to be Good Enough, it was time to actually blink some LEDs. I was able to find a blog post that did exactly what I was trying to do - run a bare-metal program that blinked an LED. Credit to William Durand for putting up a fairly comprehensive guide here: https://williamdurand.fr/2021/01/23/bare-metal-raspberry-pi-2-programming/ .
+You can see that the ARM_EXIDX section (which seems to be an LLVM-added stack trace unwinding helper, and the real "start" of the program) sits at `0x8000` in the with-script version, and `0x100d4` in the non-script version. This suggests that our linker script is appropriately situating the start of our program in memory, but the `objcopy` to convert it to a machine-code image is taking only the machine-code parts of the ELF, so our entrypoint is going to be at `0x0000` _within the image file_ no matter what. Making sure that machine code gets loaded into the correct part of memory falls to us.
 
-The guide is useful, and provided me with assumed-good code to run, but there were two issues:
-1) The guide builds with GCC (and we'd settled on Clang for mostly arbitrary reasons)
-2) Copy + pasting code isn't the most educational thing you can do
+My conclusion here is that I should keep the linker script with offset `0x8000` because I strongly suspect it's important, but I'd like to _prove_ that it's important at a later date.
 
-### Building with Clang
-#### First Steps
-The first challenge to tackle was to see if I could get Mr. Durand's code built+linked with Clang/LLVM, rather than GCC. Finding comprehensive references for cross-compiling with Clang was a bit of a challenge, but I was able to track down two useful bits of information:
+## D4D4 padding
+The next issue to tackle is the mysterious `d4d4` padding. This one ended up being pretty easy. Our linkerscript requests the `.rodata` section be aligned to the next 4k increment. This will insert padding so that the first real word of `.rodata` can be at the next interval of `0x1000` in memory. We can see in our readelf output that the `.rodata` section starts at `0x000080e4` and has a size of `0x000f1c`. That would put the next word after this section at `0x9000` . . . which is 4k aligned. This looks fishy (this is the `.rodata` section? Isn't that the one we _wanted_ to be aligned, but you're saying the _next_ section would start there?) until you consider . . . our program doesn't have any `.rodata`. There's no constant data in our very simple example, so all the ends up existing in this section is padding, and that padding makes it's way into our machine-code image file because it's technically part of a code section.
 
-The Clang arguments reference - https://clang.llvm.org/docs/ClangCommandLineReference.html
+## Many many no-ops
+The no-op issue is still somewhat unresolved. The readelf output shows the `.text` (code) sections of both ELF's being the same, The `.ARM.exidx` sections are _also_ the same size. The only notable difference is that there is a large offset between the end of `.ARM.exidx` and start of `.text` in the no-script version. We know that LLVM is adding the `.ARM.exidx` section immediately in front of our `.text` section by default (see question below), so we wouldn't really expect there to be a huge offset.
 
-This StackOverflow post - https://stackoverflow.com/questions/14697614/clang-cross-compiling-for-arm
+_However_, the default placement strategy for LLD is kind of arcane - it's an actually programmed in (rather than a Default Linker Script) and makes Decisions on the fly about what to place there (ref: https://groups.google.com/g/llvm-dev/c/3y15MZRgVZ4 ). It's not entirely unreasonable that LLVM would _prefer_ to have this very spacious layout with room for activities, but is content to just slap the section directly onto the front of your `.text` sections if you're forcing a linker script.
 
-Between the two, I was able to figure out the most important command line arguments: `-target` for setting target architecture, `-mcpu` for setting specific target CPU (a Cortex-A7, for the RPi 2), `-mfloat-abi` for setting the floating point implementation, and `-nostdlib` to prevent automatically linking the C standard library.
 
-The exact name for the `-mcpu` flag was found using the `-print-cupported-cpus` option.
+## What is the `.ARM.exidx` section, anyway?
+Some research suggests that LLVM adds this section to help with stack trace unwinding / exception handling, whether or not it's actually needed. It's dumpable with `readelf -u <.elf>`, and looks like this:
 
-The value of `-mfloat-abi` may be incorrect - soft float is a safe choice when you don't know what instructions / accelerators are available. I'm currently not aware of whether the RPi part has a NEON floating point accelerator or not (I don't _think_ so, but I don't know for sure. We'll tackle it later).
+With Script:
+```
+Unwind table index '.ARM.exidx' at offset 0x8000 contains 2 entries:
 
-#### Dealing with Assembly
-I spent far too long reading about dealing with assembly using Clang/LLVM and not nearly enough time actually trying it out. My initial assumptions were that I would have to specific an ARM assembler to be used and do some toolchain configuration. It turns out that's not true - Clang has an integrated ARM assembler that is mostly-compatible with GAS syntax. Passing the assembly file into the Clang command Just Works.
+0x8010: 0x1 [cantunwind]
 
-One note - Mr. Durands files use a `.S` extension for non-preprocessed assembly, which is a Unix convention. I had to swap the extension for `.asm`, the Windows convention. Preprocessed assembly uses the `.s` extension - which in the Windows non-case-sensitive world would cause a conflict with the `.S` extension for files in need of preprocessing.
+0x80e4 <kernel_main+0xc0>: 0x1 [cantunwind]
+```
 
-#### Linking it all together
-The one curveball I was thrown while setting up the build script was an issue with linking. One of the drivers for me wanting to use LLVM for building was to avoid having to install and manage a GCC toolchain. It turns out that by default, Clang will delegate linking to `gcc` (so GCC can pass it on to `ld` after doing some GCC-specific magic with the flags, I guess?).
+Without Script:
+```
+Unwind table index '.ARM.exidx' at offset 0xd4 contains 2 entries:
 
-This caused an issue in my build script, as `gcc` is not installed - resulting in a linker error. Turning on the `-v` verbose flag in Clang showed that the error was a "command not found" error when trying to run `gcc`. This _should_ be solvable by using a linker directly, rather than trying to proxy through `gcc`.
+0x200e4: 0x1 [cantunwind]
 
-LLVM has a linker (`lld`), and forcing Clang compilation to use `lld` is (supposed to be) as simple as adding the `-fuse-ld=lld` argument - causing Clang to use `lld` directly for linking. However, setting this flag did nothing to resolve the error. Running `clang` with the `-c` option and manually linking the resulting `.o` files with `lld` seemed to work, but `-fuse-ld=lld` was resulting in `clang` continuing to attempt to use `gcc` to link.
+0x201b8 <kernel_main+0xc0>: 0x1 [cantunwind]
+```
 
-The most information I could find about this issue is this thread from 2017:
-https://groups.google.com/g/llvm-dev/c/TCCSzAICtDI/m/Tmi7I430AAAJ
+so . . . functionally the same. How / why this bit of Data gets to live at what I would have thought would be the first executable instruction is uncertain to me, but I'm not sure it's really interesting or relevant enough to look into right now.
 
-Apparently using the `-target` flag conflicts with the `-fuse-ld` flag, and causes Clang to fall back onto it's default linking behavior. The thread doesn't seem to propose a fix (it focuses mostly on the other issues presented), so my assumption is that this situation persists. It's entirely unclear if it's a bug, or intentional due to some limitation of `lld` that's going to destroy me three days from now.
+## Conclusion
+We're going to use the linker script pretty much as-is for now, on the assumption that it's actively preventing horrible memory-access issues from arising if the code gets more complex. I might remove the `.rodata` alignment requirement, since I wasn't able to see any real use for it - we can discover what it's saving us from for ourselves.
 
-#### Missing link?
-At this point, I was able to create a working image with `llvm-objcopy` to convert the `.elf` to a raw binary image. I confirmed that it worked by loading it onto the SD card and watching the blinky lights, then rebuilding it with different values for the loop "wait intervals" and confirming that the light blink frequency changed.
+I would also like to _prove_ that the script is preventing bad addresses from being written, but I'm confident enough that that is the case to backburner it for now.
 
-However, it turns out there is a piece missing . . . my linking command doesn't use the `linker.ld` script provided by Mr. Durand. It seems like the only critical function of the script is to ensure that our executable code starts at `0x8000` (which is where the Broadcom boot firmware jumps to after it finishes initialization).
+# What's Next
+Next we're actually reading the _code_ part to make sure we know what's going on. It likely won't result in any outstanding revelations (or commits, even).
 
-## What's Next
-I want to investigate _why_ I'm able to boot without specifying the linker script, which shouldn't be a particularly big endeavor.
-
-After that, I'll spend some time poking around at Mr. Durands code to make sure I understand what it's doing in order to get things running.
-
-Then I'll be done with Version 0, and move on to accessing peripherals - specifically the UART.
+This is likely the last commit in version 0 - next we'll be uprevving to version 1 and trying to get the UART to work
