@@ -41,9 +41,9 @@ void kernel_main() {
   *(volatile uint32_t *)GPFSEL4 |= 1 << 21;
 
   // Configure GPIO 14+15 to be rx/tx for UART1
-  *(volatile uint32_t *)GPFSEL1 &= ~(2 << 15);
-  *(volatile uint32_t *)GPFSEL1 &= ~(2 << 12);
-
+  // Clobber all other fields #YOLO
+  *(volatile uint32_t *)GPFSEL1 = (2 << 15) & (2 << 12);
+  
   // Disable pullups on UART pins.
   // This is a bit of a process - we set the config value,
   // wait 150 sysclk cycles, and then "clock" it into 
@@ -66,7 +66,7 @@ void kernel_main() {
   // Set 8bit mode
   *(volatile uint32_t *)AUX_MU_LCR_REG = 1;
   // Clear DLAB
-  //*(volatile uint32_t *)AUX_MU_LCR_REG &= ~(1 << 7);
+  *(volatile uint32_t *)AUX_MU_LCR_REG &= ~(1 << 7);
 
   // Set RTS (seems. . . unnecessary?)
   *(volatile uint32_t *)AUX_MU_MCR_REG = 0;
