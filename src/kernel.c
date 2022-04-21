@@ -37,12 +37,17 @@ void wait(uint32_t cycles) {
 
 
 void kernel_main() {
+  int read_buffer_idx = 0;
+  int write_idx = 0;
+  uint32_t read_buffer[32];
+
+  noticeable_pause();
   *(volatile uint32_t *)GPFSEL4 &= ~(7 << 21);
   *(volatile uint32_t *)GPFSEL4 |= 1 << 21;
 
   // Configure GPIO 14+15 to be rx/tx for UART1
   // Clobber all other fields #YOLO
-  *(volatile uint32_t *)GPFSEL1 = (2 << 15) & (2 << 12);
+  *(volatile uint32_t *)GPFSEL1 = (2 << 15) | (2 << 12);
   
   // Disable pullups on UART pins.
   // This is a bit of a process - we set the config value,
@@ -64,15 +69,12 @@ void kernel_main() {
   *(volatile uint32_t *)AUX_MU_CNTL_REG = 0;
 
   // Set 8bit mode
-  *(volatile uint32_t *)AUX_MU_LCR_REG = 1;
+  *(volatile uint32_t *)AUX_MU_LCR_REG = 3;
   // Clear DLAB
   *(volatile uint32_t *)AUX_MU_LCR_REG &= ~(1 << 7);
 
-  // Set RTS (seems. . . unnecessary?)
-  *(volatile uint32_t *)AUX_MU_MCR_REG = 0;
-
   // Clear FIFOs
-  *(volatile uint32_t *)AUX_MU_IIR_REG |= 3 << 1;
+  *(volatile uint32_t *)AUX_MU_IIR_REG = 3 << 1;
 
   // Turn off transmit flow control
   *(volatile uint32_t *)AUX_MU_CNTL_REG &= ~(1 << 3);
@@ -82,19 +84,25 @@ void kernel_main() {
   *(volatile uint32_t *)AUX_MU_CNTL_REG = 3;
 
   while (1) {
-    clear_activity_led();
-    wait(0x10000);
-    set_activity_led();
-    wait(0x10000);
-    clear_activity_led();
-    noticeable_pause();
-    uint32_t transmitter_empty = *(volatile uint32_t *)AUX_MU_LSR_REG & (1 << 5);
-    if (transmitter_empty) {
-      set_activity_led();
-      *(volatile uint32_t *)AUX_MU_IO_REG = 0x5A5A5A5A;
-    } else {
-      clear_activity_led();
+    read_buffer_idx = 0;
+    write_idx = 0;
+
+    // Slurp up RX FIFO
+    while((*(volatile uint32_t *)AUX_MU_LSR_REG & 1) &&
+          (read_buffer_idx < 32)) {
+        uint32_t read_value = *(volatile uint32_t *)AUX_MU_IO_REG;
+        read_buffer[read_buffer_idx] = read_value;
+        read_buffer_idx += 1;
     }
-    noticeable_pause();
+
+    // Dump our read values to TX
+    while(write_idx < read_buffer_idx) {
+      // Wait for spots in TX FIFO
+      while(!( *(volatile uint32_t *)AUX_MU_LSR_REG & (1 << 5))) { do_nothing(); }
+      *(volatile uint32_t *)AUX_MU_IO_REG = read_buffer[write_idx];
+      write_idx++;
+    }
+
+    wait(0x10000);
   }
 }
