@@ -6,19 +6,19 @@ if (-Not (Test-Path "out/")) {
     New-Item "out" -ItemType Directory
 }
 Set-Location "out"
-
-clang ../src/boot.asm   `
-      ../src/kernel.c   `
-      -v                `
-      --target=arm      `
-      -mcpu=cortex-a7   `
-      -mfloat-abi=soft  `
-      -Werror           `
-      -nostdlib         `
+$cFiles = Get-ChildItem -Path ../src -Recurse -Filter "*.c"
+clang ../src/boot.asm    `
+      $cFiles.FullName   `
+      -v                 `
+      --target=arm       `
+      -mcpu=cortex-a7    `
+      -mfloat-abi=soft   `
+      -Werror            `
+      -nostdlib          `
       -c
 
-ld.lld boot.o         `
-       kernel.o       `
+$oFiles = Get-ChildItem -Path . -Filter "*.o"
+ld.lld $oFiles.FullName  `
        -T ../linker.ld   `
        -o kernel.elf
 
