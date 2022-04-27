@@ -1,14 +1,8 @@
 #include <stdint.h>
 #include "register_access/register_access.h"
 #include "debug/debug.h"
+#include "gpio/gpio.h"
 #include "uart.h"
-
-Register GPPUD = (Register)0x3F200094;
-Register GPPUDCLK = (Register)0x3F200098;
-Register GPFSEL4 = (Register)0x3F200010;
-Register GPSET1 = (Register)0x3F200020;
-Register GPCLR1 = (Register)0x3F20002C;
-
 
 #define SYSCLK_RATE 250000000
 #define BAUDRATE 115200
@@ -16,11 +10,11 @@ Register GPCLR1 = (Register)0x3F20002C;
 const uint32_t baud_divisor = (SYSCLK_RATE / (8 * BAUDRATE)) - 1;
 
 void set_activity_led() {
-  register_bit_write(GPSET1, 15, 1);
+  gpio_pin_set(47);
 }
 
 void clear_activity_led() {
-  register_bit_write(GPCLR1, 15, 1);
+  gpio_pin_clear(47);
 }
 
 void print_hex(uint32_t value) {
@@ -44,11 +38,14 @@ void kernel_main() {
   Register scratch_reg = (Register)&scratch_var;
 
   wait(1048576);
-  register_bitfield_write(GPFSEL4, 23, 21, 001);
+  gpio_pin_function_set(47, GPIO_OUTPUT);
+
 
   // Configure GPIO 14+15 to be rx/tx for UART1
-  register_bitfield_write(GPFSEL1, 17, 15, 2);
-  register_bitfield_write(GPFSEL1, 14, 12, 2);
+  //register_bitfield_write(GPFSEL1, 17, 15, 2);
+  //register_bitfield_write(GPFSEL1, 14, 12, 2);
+  gpio_pin_function_set(14, GPIO_ALT5);
+  gpio_pin_function_set(15, GPIO_ALT5);
   
   // Disable pullups on UART pins.
   // This is a bit of a process - we set the config value,
@@ -101,7 +98,7 @@ void kernel_main() {
     write_idx = 0;
 
     // Slurp up RX FIFO
-    while(register_bit_read(AUX_MU_LSR_REG, 1) &&
+    while(register_bit_read(AUX_MU_LSR_REG, 0) &&
           (read_buffer_idx < 32)) {
         uint32_t read_value = register_read(AUX_MU_IO_REG);
         read_buffer[read_buffer_idx] = read_value;
@@ -111,7 +108,7 @@ void kernel_main() {
     // Dump our read values to TX
     while(write_idx < read_buffer_idx) {
       // Wait for spots in TX FIFO
-      while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
+      while(!( register_bit_read(AUX_MU_LSR_REG, 5)) ) { do_nothing(); }
       register_write(AUX_MU_IO_REG, read_buffer[write_idx]);
       write_idx++;
     }

@@ -1,6 +1,6 @@
 #include "register_access/register_access.h"
 
-Register GPFSEL1 = (Register)0x3F200004;
+
 Register AUX_IRQ = (Register)0x3F215000;
 Register AUX_ENABLES = (Register)0x3F215004;
 Register AUX_MU_IO_REG = (Register)0x3F215040;
