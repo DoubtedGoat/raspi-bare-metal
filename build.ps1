@@ -7,8 +7,8 @@ if (-Not (Test-Path "out/")) {
 }
 Set-Location "out"
 $cFiles = Get-ChildItem -Path ../src -Recurse -Filter "*.c"
-clang ../src/boot.asm    `
-      $cFiles.FullName   `
+clang $cFiles.FullName   `
+      ../src/boot.asm    `
       -v                 `
       --target=arm       `
       -mcpu=cortex-a7    `
