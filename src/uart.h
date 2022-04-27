@@ -1,16 +1,13 @@
-#define AUX_IRQ_BUS 0x7E215000
-#define AUX_ENABLES_BUS 0x7E215004
-#define AUX_MU_IO_REG_BUS 0x7e25040
+#include "register_access/register_access.h"
 
-
-#define GPFSEL1 0x3F200004
-#define AUX_IRQ 0x3F215000
-#define AUX_ENABLES 0x3F215004
-#define AUX_MU_IO_REG 0x3F215040
-#define AUX_MU_IER_REG 0x3F215044
-#define AUX_MU_IIR_REG 0x3F215048
-#define AUX_MU_LCR_REG 0x3F21504C
-#define AUX_MU_MCR_REG 0x3F215050
-#define AUX_MU_LSR_REG 0x3F215054
-#define AUX_MU_CNTL_REG 0x3F215060
-#define AUX_MU_BAUD 0x3F215068
+Register GPFSEL1 = (Register)0x3F200004;
+Register AUX_IRQ = (Register)0x3F215000;
+Register AUX_ENABLES = (Register)0x3F215004;
+Register AUX_MU_IO_REG = (Register)0x3F215040;
+Register AUX_MU_IER_REG = (Register)0x3F215044;
+Register AUX_MU_IIR_REG = (Register)0x3F215048;
+Register AUX_MU_LCR_REG = (Register)0x3F21504C;
+Register AUX_MU_MCR_REG = (Register)0x3F215050;
+Register AUX_MU_LSR_REG = (Register)0x3F215054;
+Register AUX_MU_CNTL_REG = (Register)0x3F215060;
+Register AUX_MU_BAUD = (Register)0x3F215068;

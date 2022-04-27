@@ -1,5 +1,5 @@
-#ifndef REGISTER_ACCESS
-#define REGISTER_ACCESS
+#ifndef REGISTER_ACCESS_H
+#define REGISTER_ACCESS_H
 
 #include <stdint.h>
 
