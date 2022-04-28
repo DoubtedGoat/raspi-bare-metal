@@ -22,6 +22,25 @@ bool test_make_bitmask() {
     } else {
         printf("[PASS] Make Bitmask - expected %#010x, got %#010x\n", expected_bitmask, bitmask);
     }
+
+    bitmask = make_bitmask(0, 0);
+    expected_bitmask = 0x00000001;
+    if (bitmask != expected_bitmask) {
+        printf("[FAIL] Make bitmask single bit - expected %#010x, got %#010x\n", expected_bitmask, bitmask);
+        return false;
+    } else {
+        printf("[PASS] Make Bitmask single bit - expected %#010x, got %#010x\n", expected_bitmask, bitmask);
+    }
+
+    bitmask = make_bitmask(8, 8);
+    expected_bitmask = 0x00000100;
+    if (bitmask != expected_bitmask) {
+        printf("[FAIL] Make bitmask single bit position 8 - expected %#010x, got %#010x\n", expected_bitmask, bitmask);
+        return false;
+    } else {
+        printf("[PASS] Make Bitmask single bit position 8 - expected %#010x, got %#010x\n", expected_bitmask, bitmask);
+    }
+
     return true;
 }
 
@@ -58,15 +77,24 @@ bool test_bitfield_write() {
 }
 
 bool test_bit_read() {
-    uint32_t reg_value = 0x00008000;
+    uint32_t reg_value = 0xA5A58001;
     Register reg = (Register)&reg_value;
     uint32_t actual = register_bit_read(reg, 15);
     uint32_t expected = 1;
     if (expected != actual) {
-        printf("[FAIL] Bit read - expected %#010x, got %#010x\n", expected, actual);
+        printf("[FAIL] Bit read position 15 - expected %#010x, got %#010x\n", expected, actual);
         return false;
     } else {
-        printf("[PASS] Bit read - expected %#010x, got %#010x\n", expected, actual);
+        printf("[PASS] Bit read position 15 - expected %#010x, got %#010x\n", expected, actual);
+    }
+
+    actual = register_bit_read(reg, 0);
+    expected = 1;
+    if (expected != actual) {
+        printf("[FAIL] Bit read position 0 - expected %#010x, got %#010x\n", expected, actual);
+        return false;
+    } else {
+        printf("[PASS] Bit read position 0 - expected %#010x, got %#010x\n", expected, actual);
     }
     return true;
 }
