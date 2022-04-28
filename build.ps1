@@ -9,7 +9,6 @@ Set-Location "out"
 $cFiles = Get-ChildItem -Path ../src -Recurse -Filter "*.c"
 clang $cFiles.FullName   `
       ../src/boot.asm    `
-      -v                 `
       --target=arm       `
       -mcpu=cortex-a7    `
       -mfloat-abi=soft   `
