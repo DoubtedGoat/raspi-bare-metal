@@ -7,77 +7,64 @@ This repo will be tagged and "released" regularly as I work on it, with the time
 I will try to update the README with a description of what I've done and why upon each release.
 
 
-# Version 1.0.0 - Assuming Direct (UART) Control
-Our first major version! I have gotten the UART to Do Stuff, successfully. This was _hard_ - much, much harder than it should have been, largely due to missing information and poor tooling. I was able to find pretty decent documentation to work from (as well as two Github projects attempting to do the same thing), but I don't have an oscilloscope or logic analyzer to actually test outputs, so my only feedback was "is it Completely Working or is it Not" via connecting a serial emulator (PuTTY). This also left me open to serial emulator mis-configuration issues as a possible source of failure.
+# Version 1.1.0 - Clean Up
+For this release, I've split up a lot of the functionality from our proof of concept into sensible groups of modules, and tried to clean up the usage of the UART slightly.
+I've also added a rudimentary host-machine test script - I can build and run tests on an x86 box to check out logical functionality. This was something I had intended to do _eventually_, and regret not doing _sooner_ - I lost several hours of effort to a slow and stupid debug process while building out the register-access module. A similar bug that appeared later took under an hour, due in large part to the increased ease of testing from having put together this script.
 
-All of these factors combined lead to a relatively slow implementation. There was a "code complete" implementation with all the broad strokes correct fairly quickly, but minor details trickled in as I did more research. Major thanks to Scott Teal and Mike St. Jean for giving the code a read and catching some nasty mistakes I had been overlooking.
+For this write-up I'm going to do a quick walk-through of the major design decisions that got made. There's not too much of a story to this one - I had a plan, and I pretty much just Did That.
 
-## Design Goals
-There are two UARTs on the Raspberry pi - UART0 is a fully featured 16550-esque UART, and UART1 is a "mini-UART" with some subset of 16550 features. The documentation states that the Mini-UART is intended to be used as a console. I've since lost the reference for where I found that information, and _other_ documentation ( https://www.raspberrypi.com/documentation/computers/configuration.html#raspberry-pi-zero-1-2-and-3 ) now leads me to believe that UART0 is intended as the primary UART . . . but I didn't encounter that until I'd already targeted the mini-UART, and I'm too stubborn to change course ( this is a mistake ).
+## Module Boundaries
+My original plan was to build three modules - `register_access`, `gpio`, and `uart`. I ended up adding a `debug` module later in the process. The module lines were intended to provide a pyramid of abstraction, and cut down on the amount of repetitive code (ie, chances for human error). The foundation for everything would be `register_access`. Rather than bespoke, hand-crafted operations for every poke on every register, I wanted to have a tried-and-true set of functions I could use to just Flip Bits without any fuss.
 
-Our goal with "controlling the UART" is to get a simple program running that echoes inputs. I'm not too concerned with code quality or organization at this point - I want to be able to get data off the chip to somewhere I can see it, so I've got a better outlet for debugging in the future.
+The `gpio` and `uart` modules roughly correspond to distinct subsystems on the Pi - with `uart` depending on `gpio` in order to function. With both of these modules in hand, my goal was to have our `kernel.c` file not need to use any of the methods in `register_access` directly - all logical operations could be performed through the public interface of either `gpio` or `uart` with no manual bit-flipping.
 
-## Sketchy Documents
-My best reference for controlling the UART is this:
+The `debug` module came about as random test code started to clutter up the top of `kernel.c`. Support functions like hex-conversion and manual-waits needed a ~dumping ground~ proper home, so this module came into existence.
 
-https://www.raspberrypi.org/app/uploads/2012/02/BCM2835-ARM-Peripherals.pdf
+## Register Access
+The key decision in `register_access` is the choice to `typedef` a `Register` type, rather than using `#define` for every address and putting `(volatile uint32_t *)` casts directly into the register access methods. My primary goal here was to create readable function signatures - the user should be able to trivially compare input type to argument type to see if they're Doing It Right. Unfortunately C doesn't offer type enforcement for `typedef`s so this won't give compile-time errors, but it will serve as a strong hint to the user (me). The tradeoff here is that we're requiring defined constants for all of our addresses, which will take up space. This doesn't particularly bother me since we have a ton of space on the Pi, and I'm prioritizing writing for readability rather than constraints (for now). It is worth noting that this issues gets compounded a decent amount later on, though I'll still choose to ignore it.
 
-This is the peripheral documentation for the BCM2835 . . . the version of the chip from the RPi 1. The first major task here is figuring out how much this diverges from the actual situation on the RPi 2. Some forum posts suggest that the peripheral memory layout is identical between the BCM2835 and BCM2836, and only the base physical address has changed.
+The other 'choice' of note in this module is offering a bitfield write that does a read-modify-write for you. There are some register interfaces that change on read - reading from a FIFO, reading the UART overrun bit, etc. A read-modify-write can perturb the state of any read-sensitive bits, and may be unexpected to the user if they're not familiar with the inner workings of `register_bitfield_write`. The other option here would be to only offer `register_write` and force the user to make their own choices about whether they want to use a read first, or just completely clobber the register. Ultimately I opted for the convenience of a bitfield-write function, knowing that I will be the only person writing code here and I will totally not ever get got by this. Another alternative would be to explicitly name the method `register_bitfield_read_modify_write` but it would clutter my absolutely delightful naming convention, so that's a no.
 
-William Durands ( @willdurand ) code I was referencing during board bring-up puts the GPIO function selection 4 register at `0x3F200010`, which suggests the base physical address for the peripheral region is at `0x3F000000`. I was able to corroborate this with information from a forum post, but I've since lost the reference. Later in the process, I was also able to confirm that the base address I had chosen lined up with what other people had chosen when doing similar projects.
+One note about this module - the `make_bitmask` method cause me all kinds of issues (as you can see in the commit history). Perhaps it's just too long away from bitwise operations, but I spent an undue amount of time determining the right way to get it to work and _still_ got bitten when my final answer ended up failing to handle the `X:0` case due to overlooking integer wrapping being A Thing. The first round of trying to get this to work right culminated in my writing the test scripts, which saved me a ton of pain when fixing the `X:0` edge case.
 
+## GPIO
+The `gpio` module was the first time I had to use my `Register` type from `register_access` as reusable constants. This causes a minor tradeoff. Defining the constants as `static` (with internal linkage) will cause them to be duplicated in memory for every file that includes the header (unless there is a clever optimization that I am not aware of). Had I instead chosen to define them as `extern` (for external linkage), there would only be one copy in program memory _but_ I would have had to move the initializations into `gpio.c` and only have the `extern` definitions in `gpio.h`. I chose to go with `static` because making edits in two places to add a constant is the type of thing that gets forgotten or messed up, and I'm not memory constrained enough (or pretending to be memory constrained enough) that I care about the duplication. If I _do_ end up caring, I'll likely inspect the `elf` first to make sure that Clang isn't already optimizing and I'm worried about nothing.
 
-## First Steps
-Knowing all of this, I was able sketch out all the basic configuration:
- - Enable mini-UART
- - Set it to 8bit mode
- - Turn off flow control
- - Set up TX/RX
+Another minor choice in `gpio` is using an `enum` for pin function. While (much like `typedefs`) `enum`s in C aren't typechecked or enforced in any way, it supports my desire to make informative function signatures, and groups valid argument values together. Using the `enum` value declarations as constants is moderately controversial, since I am now depending on the underlying values to Do Stuff and can fall victim to "rude people passing in random integers" in a way that a `switch` statement with `default` would not. Conversely, if I want to guard against nefarious usage I can just as easily validate my inputs, and I'm not sure the ideological purity of "enums only as named types" really gains me anything.
 
-At this point I didn't yet know that the 2ndstage bootloader was using UART0 - I was operating under the false assumption that UART0 was _probably_ basically already set up right (specifically, GPIO function and baud rate), and all my config was just Going Through The Motions. This, obviously, didn't work.
+## UART
+The `uart` module follows basically the same set of choices as the `gpio` module - `static` register addresses, and `enums` for constrained arguments. There are two pieces that are distinct and moderately interesting - configuration options (and validation), and the `Uart` struct.
 
-I took several passes at scrutinizing the code in-depth to see what I was missing, and fixed some minor errors. Perhaps the most important was moving "Enable the UART" from the final step (where I had assumed "it's configured, now turn it on") to the first step (because the docs clearly state you can't write any of the config registers while it's not enabled).
+### UartConfiguration
+I chose to capture configuration options as a `struct` rather than an argument list for one primary reason: I can change the `struct` definition without changing every callsite. This is only _very debateably_ a good thing - after all, if you have new required arguments, shouldn't you fail builds if they're missing? My main reasoning here is twofold: 
+1) I can (and should) implement Sane Default Values for all struct fields, which would obviate the need to set values anywhere unless I explicitly care about them
+2) This code is _very_ likely to change, as it stands. In combination with point number 1, a struct-as-options is extremely change friendly.
 
-## Outside Help
-Since I don't write the dev logs In Real Time while developing, the order of events here might be a little sketchy. After having my first pass fail with no obvious cause, I set out on the internet to see what other people had done, and what steps I might be missing. I came across this post, by Andre Leiradella ( @leiradel ):
+These two points in combination will let me choose exactly how much I do or don't want to expose for configuration, without requiring (possibly extensive) code updates. The astute reader will note here that almost no updates to uart configuration will be extensive, because there is only one uart. Consider this implementation as a test-drive for a pattern I may like to adopt in other pieces of code moving forward.
 
-https://leiradel.github.io/2019/02/10/The-Mini-UART.html
+### A Struct Named Uart
+The other `struct` of interest and likely controversy is `Uart` itself. Currently it holds almost nothing - a singular flag that indicates whether the Uart has been configured. A flag that could easily have been a `static` value in the `uart.c` module.
 
-which ended up being supremely useful. This was my first hint that I _couldn't_ expect the mini-UART to be pre-configured - his code was setting GPIO function for the desired pins, setting the baudrate, _and_ disabling pullups on the UART GPIO pins (something I had not even considered).
+The reasoning here is that it is an abstract representation of external side-effect-y state that needs to be respected - think of it as a shitty monad. Since the UART itself is stateful (cannot be used until initialized), the default implementation is a set of functions with no return values that have to be called in a specific order otherwise Bad Stuff Happens. This is Bad because there is nothing to telegraph to the consumer that they _should_ have done things in a particular order.
 
-At this point I updated my configuration to take the same steps as Mr. Leiradella's, comparing also against the relevant sections of documentation. One thing to note . . . I stole Mr. Leiradella's baud rate calculation, because I somehow failed to find the formula in the BCM2835 docs, despite Mr. Leiradella _explicitly stating_ that it was there.
+Even though the user could conceivably construct their own `Uart` struct and leave it unconfigured, the presence of a function that explicitly converts a `UartConfiguration` into a `Uart` (albeit with weird C reference-as-output and return-code shenanigans) suggests the proper usage. Likewise, requiring that a `Uart` struct be passed into all uart functions pushes the user towards proper usage. If your code doesn't have a `Uart` struct, your code is likely also unsure of whether the `Uart` is actually ready to be used.
 
-After making sure I went through the same configuration steps as what I assumed was a working piece of code, the UART was _still_ failing to output anything that I could pick up with PuTTY.
+The `.configured` field on the struct is there mostly because there has to be _something_ in the struct. 90% of the goal of having this struct is accomplished simply by having it exist - reporting errors when calling against an unconfigured `Uart` is largely just a pleasant side-effect.
 
-## Baud Rate
-I zeroed in on the baud-rate divisor calculation as something that I hadn't explicitly verified, and set out to see if I could find a concrete answer for how that register was supposed to be set (I still hadn't seen the formula in the docs). While looking for more information, I came across this piece of documentation from the Raspberry Pi website:
+### The Uart API
+Currently the API surface area of uart is at a pretty low-level of abstraction - reads and writes are done as single bytes, and the consumer still has to poll for new bytes. This isn't all that great if you consider that we'd like to use the uart as a basis for debug output. A better API would likely let us read and write longer byte buffers, and have an abstracted notification for readability so we can grab a large block from a software buffer all at once, rather than waiting around for bytes to float in. We'll try and get this cleaned up in the next release.
 
-https://www.raspberrypi.com/documentation/computers/configuration.html#mini-uart-and-cpu-core-frequency
+## Error Handling
+Error handling in C is a long chain of difficult decisions, none of which ever feel particularly correct. My preference to-date is to have almost-all functions return return codes, with negative numbers indicating errors. An error-handling method can be called, which will do something useful (in our current case, turn on an LED and halt the program). This isn't ideal for a number of reasons.
+1) Return codes are easily ignored - just don't bother looking at them, and all error handling is gone. Unfortunately this is going to be an issue with every error-handling strategy in C, so it's kind of cost-of-doing-business.
+2) "Functions return values" semantics are _amazing_ for code ergonomics. I cannot overstate how nice it is to have your code conform to a clear logical model of "inputs create outputs". While there are minor benefits to "outputs as reference arguments" (like not copying large structs during returns), the ergonomics of having your outputs be function inputs are kinda repulsive.
+3) There are always going to be predicate functions that _desperately_ want their outputs to be return values (eg `uart_can_read()`). Even if these functions don't have failure modes, there is now still two types of usage modes present in the codebase, and no indicator as to which mode a particular function uses. You could make a reasonable guideline "predicates return `bool`, return codes are `int`" but it's just _begging_ for exceptions to crop up. Prefixes feel like ugly band-aids - no one wants to call `rc_uart_configure` or `p_uart_can_read()`. The same goes for `typedef`'ing return codes - it just feels incorrect.
 
-The claim here is that, since the mini-UART baud rate is divided out of the VPU core clock, the VPU core clock had to be fixed in order to get a constant baud rate from the UART. I added the specified lines to my `config.txt`, and ended up with . . . nothing, still.
+Even writing this section has convinced me that I don't particularly like my own stated "preferred method". A possibly better option is to let outputs be outputs, and force return codes to be reference arguments. Unfortunately this leaves them just as ignorable, but would at least preserve those delicious "functions return values" semantics.
 
-## Phone A Friend
-I'd gone about a day and a half without telling my Discord channel about what I'd been doing, which is apparently a big red flag that I'm stuck. After being asked if I'd had any success with the UART, I pushed my working branch and sent it out. I got Scott Teal ( @Cognoscan ) and Mike St. Jean to read it, and got some really helpful advice:
- - I had PuTTY configured with incorrect flow-control
- - My code for setting the GPIO function selection registers was blatantly incorrect
+There are other options as well - if we're committed to our object/struct/monad structure as demonstrated by UART, it would be reasonable to attach an error field to it - this is functionally not that different from return-code-as-reference-argument, but could be a nice way of letting us give the error an `enum` type that's actually useful to the user and not just immediately cast to an int.
 
-Both of those things were pretty easy fixes (though my first fix for the GPIO functions was _still_ incorrect, because it be like that sometimes), but the result was the same - no life on the UART.
-
-## Sketchy Documents: Reprise
-One other thing had come out of talking to some other people about the issues: a link to another project doing a bare-metal mini-UART implementation. This was done by David Welch ( @dwelch67 ):
-
-https://github.com/dwelch67/raspberrypi/tree/master/uart01
-
-The README in this folder claims that the documentation for several of the registers is _just plain wrong_ - including the 7/8bit config, and the Interrupt and FIFO Control registers. I updated my code to use Mr. Welch's configuration values and . . . it worked. After doing a couple of passes with variations of which configuration was included/excluded, I narrowed it down to specifically the 8bit configuration register. The changes to what was being written to the FIFO Control register had no discernible impact.
-
-## Lessons Learned
-It's pretty clear that there were three things that really hurt my ability to get the mini-UART running.
-
-1) Bad assumptions. Ignoring GPIO setup and baud-rate configuration on the assumption that we'd be able to carry over configuration from the 2ndstage bootloader put some egg on my face when comparing against other implementations.
-
-2) Sketchy documentation. By far the most _frustrating_ blocker here was the 7/8bit control register being incorrectly documented. There are other portions of the documentation that also undermine confidence - register names being inconsistent, and contradictory information between some bitfield descriptions and their long-form documentation counterparts lead me to second guess a lot of the information coming from the BCM2835 peripherals guide.
-
-3) Poor tooling. The 7/8bit issue wouldn't have been nearly as irritating if I'd had an oscilloscope or logic analyzer available to check if I was at least getting _something_ coming out of the UART pins. Relying on hitting a "100% working" configuration to be able to get any feedback was a planning failure, born of hubris and the assumption that the UART was trivial enough to not need debug capability. This issue could have bit me _much_ harder if I had had any issues configuring baud rate. I'll be purchasing a cheapo logic analyzer for my desk to help with any other work I might end up doing with the GPIO pins.
+Clearly I've got some things to think about with error handling. I may try and settle on a "final" strategy for the next release so I can be consistent in future code before the codebase gets too large.
 
 # What's Next
-One thing that you might have noticed while looking through the code for the UART is that it's _absolutely terrible_. It's currently still structured like a spike for configuration, which is pretty far from being a stable base for debug output in future projects. My next steps for now are going to be Cleaning Up - I want to get register access, GPIO access, and the mini-UART split into modules so the code can look a little nicer now that it's going to be used as a platform for Other Stuff.
+Next up I would like to bring the uart API up a level of abstraction, as discussed above. This likely means making read/write bytes and can-read/write local to the uart module, adding a receive buffer, and only exposing read/write of byte arrays. In addition, I would _love_ to start hooking into the interrupt and event systems so I can make uart interaction non-blocking.
