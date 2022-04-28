@@ -7,6 +7,7 @@ _start:
 
     bl kernel_main
 
+.globl halt
 halt:
     wfe
     b halt

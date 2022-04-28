@@ -1,3 +1,6 @@
+#ifndef GPIO_H
+#define GPIO_H
+
 static const Register GPFSEL0 = (Register)0x3F200000;
 static const Register GPFSEL1 = (Register)0x3F200004;
 static const Register GPFSEL2 = (Register)0x3F200008;
@@ -13,9 +16,6 @@ static const Register GPCLR1 = (Register)0x3F20002C;
 
 static const Register GPPUD = (Register)0x3F200094;
 static const Register GPPUDCLK = (Register)0x3F200098;
-
-#ifndef GPIO_H
-#define GPIO_H
 
 enum GpioFunction {
     GPIO_INPUT = 0,
