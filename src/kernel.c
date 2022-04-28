@@ -28,10 +28,15 @@ void print_hex(uint32_t value) {
   uint8_t * hex;
   hex = uint_to_ascii_hex(value);
   for (int i = 0; i < 8; i++) {
-    while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
-    register_write(AUX_MU_IO_REG, hex[i]);
+    register_write(AUX_MU_IO_REG, hex[i]);  
+    
   }
   print_newline();
+}
+
+void print_byte(uint8_t value) {
+    while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
+    register_write(AUX_MU_IO_REG, value);
 }
 
 void kernel_main() {
@@ -113,27 +118,21 @@ void kernel_main() {
         read_buffer[read_buffer_idx] = read_value;
         read_buffer_idx += 1;
     }
-    print_newline();
-    register_write(AUX_MU_IO_REG, read_buffer_idx + 48);
-    print_newline();
     // Dump our read values to TX
     while(write_idx < read_buffer_idx) {
       // Wait for spots in TX FIFO
       while(!( register_bit_read(AUX_MU_LSR_REG, 5)) ) { do_nothing(); }
-      register_write(AUX_MU_IO_REG, 124);
-      while(!( register_bit_read(AUX_MU_LSR_REG, 5)) ) { do_nothing(); }
-      print_hex(read_buffer[write_idx]);
-      //register_write(AUX_MU_IO_REG, read_buffer[write_idx]);
+      //print_hex(read_buffer[write_idx]);
+      register_write(AUX_MU_IO_REG, read_buffer[write_idx]);
       write_idx++;
     }
 
-
-    print_newline();
-    print_newline();
+/*
     set_activity_led();
     wait(250000);
     clear_activity_led();
     wait(250000);
+    */
   }
   
 }

@@ -1,7 +1,8 @@
 #include "register_access.h"
 
 uint32_t make_bitmask(uint32_t bitfield_high, uint32_t bitfield_low) {
-    return (~1 << (bitfield_low - 1)) ^ (~1 << bitfield_high);
+
+    return (~0 << (bitfield_low)) ^ (~1 << bitfield_high);
 }
 
 uint32_t register_read(Register reg) {
