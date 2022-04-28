@@ -17,6 +17,13 @@ void clear_activity_led() {
   gpio_pin_clear(47);
 }
 
+void print_newline() {
+  while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
+  register_write(AUX_MU_IO_REG, 13);
+  while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
+  register_write(AUX_MU_IO_REG, 10);
+}
+
 void print_hex(uint32_t value) {
   uint8_t * hex;
   hex = uint_to_ascii_hex(value);
@@ -24,10 +31,7 @@ void print_hex(uint32_t value) {
     while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
     register_write(AUX_MU_IO_REG, hex[i]);
   }
-  while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
-  register_write(AUX_MU_IO_REG, 13);
-  while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
-  register_write(AUX_MU_IO_REG, 10);
+  print_newline();
 }
 
 void kernel_main() {
@@ -42,20 +46,25 @@ void kernel_main() {
 
 
   // Configure GPIO 14+15 to be rx/tx for UART1
-  //register_bitfield_write(GPFSEL1, 17, 15, 2);
-  //register_bitfield_write(GPFSEL1, 14, 12, 2);
   gpio_pin_function_set(14, GPIO_ALT5);
   gpio_pin_function_set(15, GPIO_ALT5);
+
+  gpio_pin_function_set(32, GPIO_ALT3);
+  gpio_pin_function_set(33, GPIO_ALT3);
+  gpio_pin_function_set(40, GPIO_OUTPUT);
+  gpio_pin_function_set(41, GPIO_OUTPUT);
   
   // Disable pullups on UART pins.
   // This is a bit of a process - we set the config value,
   // wait 150 sysclk cycles, and then "clock" it into 
   // a specific GPIO pin
   register_write(GPPUD, 0);
-  wait(150);
+  wait(200);
   register_bitfield_write(GPPUDCLK, 15, 14, 3);
-  wait(150);
+  //register_write(GPPUDCLK, 3 << 14);
+  wait(200);
   register_bitfield_write(GPPUDCLK, 15, 14, 0);
+  //register_write(GPPUDCLK, 0);
 
 
   set_activity_led();
@@ -104,14 +113,27 @@ void kernel_main() {
         read_buffer[read_buffer_idx] = read_value;
         read_buffer_idx += 1;
     }
-
+    print_newline();
+    register_write(AUX_MU_IO_REG, read_buffer_idx + 48);
+    print_newline();
     // Dump our read values to TX
     while(write_idx < read_buffer_idx) {
       // Wait for spots in TX FIFO
       while(!( register_bit_read(AUX_MU_LSR_REG, 5)) ) { do_nothing(); }
-      register_write(AUX_MU_IO_REG, read_buffer[write_idx]);
+      register_write(AUX_MU_IO_REG, 124);
+      while(!( register_bit_read(AUX_MU_LSR_REG, 5)) ) { do_nothing(); }
+      print_hex(read_buffer[write_idx]);
+      //register_write(AUX_MU_IO_REG, read_buffer[write_idx]);
       write_idx++;
     }
+
+
+    print_newline();
+    print_newline();
+    set_activity_led();
+    wait(250000);
+    clear_activity_led();
+    wait(250000);
   }
   
 }
