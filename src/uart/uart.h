@@ -1,6 +1,7 @@
 #ifndef UART_H
 #define UART_H
 
+#include <stdbool.h>
 #include "../register_access/register_access.h"
 #include "../gpio/gpio.h"
 #include "../debug/debug.h"
@@ -39,15 +40,17 @@ typedef struct UartConfiguration {
     enum UartConfigurationBitLength bit_length;
     enum UartConfigurationRxPins rx_pin;
     enum UartConfigurationTxPins tx_pin;
-
 } UartConfiguration;
 
+typedef struct Uart {
+    uint32_t configured;
+} Uart;
 
-int uart_configure(UartConfiguration config);
-void uart_write_byte(uint8_t value);
-uint8_t uart_read_byte();
+int uart_configure(UartConfiguration config, Uart * uart);
+int uart_write_byte(Uart * uart, uint8_t value);
+int uart_read_byte(Uart * uart, uint8_t * byte);
 
-uint32_t uart_can_read();
-uint32_t uart_can_write();
+bool uart_can_read(Uart * uart);
+bool uart_can_write(Uart * uart);
 
 #endif
