@@ -66,5 +66,9 @@ There are other options as well - if we're committed to our object/struct/monad 
 
 Clearly I've got some things to think about with error handling. I may try and settle on a "final" strategy for the next release so I can be consistent in future code before the codebase gets too large.
 
+
+# Patch Update - v1.1.1
+I talked myself into switching error handling to use a reference argument for error codes, and preserve function output for actual outputs.
+
 # What's Next
 Next up I would like to bring the uart API up a level of abstraction, as discussed above. This likely means making read/write bytes and can-read/write local to the uart module, adding a receive buffer, and only exposing read/write of byte arrays. In addition, I would _love_ to start hooking into the interrupt and event systems so I can make uart interaction non-blocking.
