@@ -6,7 +6,13 @@
 const uint32_t baud_divisor = (SYSCLK_RATE / (8 * BAUDRATE)) - 1;
 
 
-uint32_t valid_uart_configuration(UartConfiguration config) {
+void set_error(int * return_code, int value)  {
+    if (return_code == 0) { return; }
+    *return_code = value;
+    return;
+}
+
+bool valid_uart_configuration(UartConfiguration config) {
     // We're going to set bit flags for each type of error,
     //   and then not use them
     // It'll be there if we ever decide to do checking
@@ -43,9 +49,15 @@ uint32_t valid_uart_configuration(UartConfiguration config) {
     return !error;
 }
 
-int uart_configure(UartConfiguration config, Uart * uart) {
+Uart uart_configure(UartConfiguration config, int * return_code) {
+    Uart uart = {
+        .configured = false
+    };
     // Validate our config
-    if (!valid_uart_configuration(config)) { return -1; }
+    if (!valid_uart_configuration(config)) { 
+        set_error(return_code, -1);
+        return uart;
+    }
 
     // Configure GPIO 14+15 to be rx/tx for UART1
     gpio_pin_function_set(config.rx_pin, GPIO_ALT5);
@@ -93,36 +105,40 @@ int uart_configure(UartConfiguration config, Uart * uart) {
     // Set TX and RX Enables to True
     register_write(AUX_MU_CNTL_REG, 3);
 
-    uart->configured = 1;
-    return 0;
+    uart.configured = true;
+    return uart;
 }
 
-int uart_write_byte(Uart * uart, uint8_t value) {
-    if (!(uart->configured)) { return -1; }
-    while(!( uart_can_write(uart)) ) { do_nothing(); }
+void uart_write_byte(Uart * uart, uint8_t value, int * return_code) {
+    if (!(uart->configured)) { return; }
+    while(!( uart_can_write(uart, 0)) ) { do_nothing(); }
     register_write(AUX_MU_IO_REG, value);
-    return 0;
 }
 
-int uart_read_byte(Uart * uart, uint8_t * byte) {
-    if (!(uart->configured)) { return -1; }
-    *byte = register_read(AUX_MU_IO_REG);
-    return 0;
+uint8_t uart_read_byte(Uart * uart, int * return_code) {
+    if (!(uart->configured)) { 
+        set_error(return_code, -1);
+        return 0; 
+    }
+    if (!uart_can_read(uart, 0)) {
+        set_error(return_code, -1);
+        return 0;
+    }
+    return register_read(AUX_MU_IO_REG);
 }
 
-// Uint as bool because bleeeech
-bool uart_can_read(Uart * uart) {
-    // Breaking our return-code mold for functions
-    //   intended to be used in if-statements.
-    // I almost certainly won't like this in about 3 days.
-    if (!(uart->configured)) { return false; }
+bool uart_can_read(Uart * uart, int * return_code) {
+    if (!(uart->configured)) {
+        set_error(return_code, -1);
+        return false;
+    }
     return register_bit_read(AUX_MU_LSR_REG, 0);
 }
 
-bool uart_can_write(Uart * uart) {
-    // Breaking our return-code mold for functions
-    //   intended to be used in if-statements.
-    // I almost certainly won't like this in about 3 days.
-    if (!(uart->configured)) { return false; }
+bool uart_can_write(Uart * uart, int * return_code) {
+    if (!(uart->configured)) {
+        set_error(return_code, -1);
+        return false;
+    }
     return register_bit_read(AUX_MU_LSR_REG, 5);
 }

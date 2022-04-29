@@ -43,14 +43,14 @@ typedef struct UartConfiguration {
 } UartConfiguration;
 
 typedef struct Uart {
-    uint32_t configured;
+    bool configured;
 } Uart;
 
-int uart_configure(UartConfiguration config, Uart * uart);
-int uart_write_byte(Uart * uart, uint8_t value);
-int uart_read_byte(Uart * uart, uint8_t * byte);
+Uart uart_configure(UartConfiguration config, int * return_code);
+void uart_write_byte(Uart * uart, uint8_t value, int * return_code);
+uint8_t uart_read_byte(Uart * uart, int * return_code);
 
-bool uart_can_read(Uart * uart);
-bool uart_can_write(Uart * uart);
+bool uart_can_read(Uart * uart, int * return_code);
+bool uart_can_write(Uart * uart, int * return_code);
 
 #endif
