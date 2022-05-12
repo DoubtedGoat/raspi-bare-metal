@@ -3,14 +3,9 @@
 #include "debug/debug.h"
 #include "gpio/gpio.h"
 #include "uart/uart.h"
+#include "interrupts/interrupts.h"
 
-void set_activity_led() {
-  gpio_pin_set(47);
-}
-
-void clear_activity_led() {
-  gpio_pin_clear(47);
-}
+extern uint32_t *vector;
 
 void halt_on_error(int rc) { 
   if (rc >= 0) { return; }
@@ -37,11 +32,6 @@ void print_hex(Uart * uart, uint32_t value) {
   print_newline(uart);
 }
 
-void print_byte(uint8_t value) {
-    while(!( register_bit_read(AUX_MU_LSR_REG, 5))) { do_nothing(); }
-    register_write(AUX_MU_IO_REG, value);
-}
-
 void kernel_main() {
   int read_buffer_idx = 0;
   int write_idx = 0;
@@ -50,7 +40,7 @@ void kernel_main() {
   int return_code;
   Register scratch_reg = (Register)&scratch_var;
 
-  wait(1048576);
+  wait_cycles(1000);
   gpio_pin_function_set(47, GPIO_OUTPUT);
 
   UartConfiguration uart_config = {
@@ -61,6 +51,21 @@ void kernel_main() {
   };
   
   Uart uart = uart_configure(uart_config, &return_code);
+
+  print_hex(&uart, register_read(IRQ_BASIC_PENDING));
+
+  configure_interrupt_handler();
+
+  while(1) {
+    wait_cycles(1048576);
+    print_hex(&uart, register_read(INTERRUPT_ENABLE_1));
+    print_hex(&uart, register_read(IRQ_BASIC_PENDING));
+    print_hex(&uart, register_read(IRQ_PENDING_1));
+    print_hex(&uart, register_read(IRQ_PENDING_2));
+    print_hex(&uart, register_read(AUX_MU_IIR_REG));
+    print_newline(&uart);
+  }
+
   halt_on_error(return_code);
   
   while (1) {

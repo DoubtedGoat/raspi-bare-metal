@@ -1,6 +1,8 @@
 #ifndef GPIO_H
 #define GPIO_H
 
+#include "../register_access/register_access.h"
+
 static const Register GPFSEL0 = (Register)0x3F200000;
 static const Register GPFSEL1 = (Register)0x3F200004;
 static const Register GPFSEL2 = (Register)0x3F200008;

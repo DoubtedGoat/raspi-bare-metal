@@ -1,6 +1,11 @@
 #include "debug.h"
 
-void wait(uint32_t cycles) {
+
+void wait_ms(uint32_t milliseconds) {
+  uint32_t cycles = milliseconds * 250000;
+  wait_cycles(cycles);
+}
+void wait_cycles(uint32_t cycles) {
   for (uint32_t i = 0; i < cycles; i++) {
     do_nothing();
   }
@@ -34,5 +39,13 @@ unsigned char * uint_to_ascii_hex(uint32_t value) {
     value = value >> 4;
   }
   return hex;
+}
+
+void set_activity_led() {
+  gpio_pin_set(47);
+}
+
+void clear_activity_led() {
+  gpio_pin_clear(47);
 }
 

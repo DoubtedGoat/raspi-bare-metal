@@ -50,6 +50,10 @@ bool valid_uart_configuration(UartConfiguration config) {
 }
 
 Uart uart_configure(UartConfiguration config, int * return_code) {
+    // Extremely aggressive memory barrier for AXI peripheral access,
+    //   until I can be bothered to do this correctly
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
     Uart uart = {
         .configured = false
     };
@@ -69,21 +73,21 @@ Uart uart_configure(UartConfiguration config, int * return_code) {
     // wait 150 sysclk cycles, and then "clock" it into 
     // a specific GPIO pin
     register_write(GPPUD, 0);
-    wait(200);
+    wait_cycles(200);
     register_bit_write(GPPUDCLK, config.rx_pin, 1);
-    wait(200);
+    wait_cycles(200);
     register_bit_write(GPPUDCLK, config.rx_pin, 0);
 
-    wait(200);
+    wait_cycles(200);
     register_bit_write(GPPUDCLK, config.tx_pin, 1);
-    wait(200);
+    wait_cycles(200);
     register_bit_write(GPPUDCLK, config.tx_pin, 0);
 
     // Enable the UART
     register_bit_write(AUX_ENABLES, 0, 1);
 
     // Disable interrupts, use polling
-    register_bitfield_write(AUX_MU_IER_REG, 1, 0, 0);
+    register_bitfield_write(AUX_MU_IER_REG, 1, 0, 2);
 
     // Disable TX/RX while we config
     register_write(AUX_MU_CNTL_REG, 0);
@@ -106,16 +110,24 @@ Uart uart_configure(UartConfiguration config, int * return_code) {
     register_write(AUX_MU_CNTL_REG, 3);
 
     uart.configured = true;
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
     return uart;
 }
 
 void uart_write_byte(Uart * uart, uint8_t value, int * return_code) {
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
     if (!(uart->configured)) { return; }
     while(!( uart_can_write(uart, 0)) ) { do_nothing(); }
     register_write(AUX_MU_IO_REG, value);
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
 }
 
 uint8_t uart_read_byte(Uart * uart, int * return_code) {
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
     if (!(uart->configured)) { 
         set_error(return_code, -1);
         return 0; 
@@ -124,21 +136,34 @@ uint8_t uart_read_byte(Uart * uart, int * return_code) {
         set_error(return_code, -1);
         return 0;
     }
-    return register_read(AUX_MU_IO_REG);
+    uint32_t result = register_read(AUX_MU_IO_REG);
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
+    return result;
 }
 
 bool uart_can_read(Uart * uart, int * return_code) {
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
     if (!(uart->configured)) {
         set_error(return_code, -1);
         return false;
     }
-    return register_bit_read(AUX_MU_LSR_REG, 0);
+    uint32_t result = register_bit_read(AUX_MU_LSR_REG, 0);
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
+    return result;
 }
 
 bool uart_can_write(Uart * uart, int * return_code) {
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
     if (!(uart->configured)) {
         set_error(return_code, -1);
         return false;
     }
-    return register_bit_read(AUX_MU_LSR_REG, 5);
+    uint32_t result = register_bit_read(AUX_MU_LSR_REG, 5);
+    // TODO: Use correct read/write barriers
+    __asm__("dmb");
+    return result;
 }
